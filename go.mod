@@ -1,3 +1,3 @@
-module net.mikesu.mola-socks5
+module github.com/mikesu/mola-socks5
 
 go 1.14

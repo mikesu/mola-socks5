@@ -2,6 +2,7 @@ package socks5
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"strconv"
 )
@@ -79,4 +80,17 @@ func (a Address) Port() int {
 
 func (a Address) Type() uint8 {
 	return a[0]
+}
+
+func (a Address) ResolveIPAddr() (net.IP, int, error) {
+	if a[0] == AtypDomain {
+		addr, err := net.ResolveIPAddr("ip", a.Addr())
+		if err != nil {
+			log.Println("resolve ip error: ", err)
+			return nil, 0, err
+		}
+		return addr.IP, a.Port(), nil
+	} else {
+		return a.IP(), a.Port(), nil
+	}
 }

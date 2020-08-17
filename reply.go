@@ -55,7 +55,7 @@ func (r *Reply) GetBytes() []byte {
 }
 
 func (r *Reply) SendTo(conn net.Conn) error {
-	_, err := conn.Write(r.GetBytes())
+	err := WriteMsg(conn, r.GetBytes())
 	if err != nil {
 		log.Println("send reply error: ", err)
 		return err

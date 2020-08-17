@@ -1,10 +1,11 @@
 package socks5
 
 import (
+	"context"
 	"io"
 	"log"
 	"net"
-	"strings"
+	"time"
 )
 
 const (
@@ -37,19 +38,20 @@ const (
 	RepNotSupported
 )
 
+const msgMaxSize = 261
 const bufSize = 4096
 
-var associateMap *AssociateMap
-var udpAddr *net.UDPAddr
+var listenAddr string
 
-func Run(address string) {
-	log.Println("Run socks5 on: ", address)
-	go serveTcp(address)
-	serveUdp(address)
+func Run(addr string) {
+	log.Println("Run socks5 on: ", listenAddr)
+	listenAddr = addr
+	go serveUdp(context.Background())
+	serveTcp(context.Background())
 }
 
-func serveTcp(address string) {
-	listener, err := net.Listen("tcp", address)
+func serveTcp(ctx context.Context) {
+	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		log.Println("local tcp listen error: ", err)
 		return
@@ -60,39 +62,11 @@ func serveTcp(address string) {
 			log.Println("local accept error: ", err)
 			continue
 		}
-		go serveTcpConn(conn)
+		go serveTcpConn(ctx, conn)
 	}
 }
 
-func serveUdp(address string) {
-	associateMap = NewAssociateMap()
-	var err error
-	udpAddr, err = net.ResolveUDPAddr("udp", address)
-	if err != nil {
-		log.Println("resolve udp addr error: ", err)
-		return
-	}
-	udpConn, err := net.ListenUDP("udp", udpAddr)
-	if err != nil {
-		log.Println("local tcp listen error: ", err)
-		return
-	}
-	for {
-		relay, err := GetRelay(udpConn)
-		if err != nil {
-			log.Println("get udp relay error: ", err)
-			continue
-		}
-		associate := associateMap.GetAssociate(relay.From, relay.Address)
-		if associate == nil {
-			go serveRelay(udpConn, relay)
-		} else {
-			associate.DataChan <- relay.Data
-		}
-	}
-}
-
-func serveTcpConn(conn net.Conn) {
+func serveTcpConn(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
 
 	err := Negotiation(conn)
@@ -107,165 +81,83 @@ func serveTcpConn(conn net.Conn) {
 	}
 	switch request.Command {
 	case CmdConnect:
-		connectHandle(conn, request)
+		connectHandle(ctx, conn, request)
 	case CmdAssociate:
-		associateHandle(conn)
+		associateHandle(ctx, conn, request)
 	default:
 		NewReply(RepCommandNotSupported).SendTo(conn)
 		log.Println("command not support:", request.Command)
 	}
 }
 
-func connectHandle(conn net.Conn, req *Request) {
-	var ip net.IP
-	if req.Address.Type() == AtypDomain {
-		addr, err := net.ResolveIPAddr("ip", req.Address.Addr())
-		if err != nil {
-			log.Println("resolve ip error: ", err)
-			NewReply(RepHostUnreachable).SendTo(conn)
-			return
-		}
-		ip = addr.IP
-	} else {
-		ip = req.Address.IP()
-	}
-	target, err := net.DialTCP("tcp", nil, &net.TCPAddr{IP: ip, Port: req.Address.Port()})
+func WriteMsg(conn net.Conn, msg []byte) error {
+	err := conn.SetDeadline(time.Now().Add(10 * time.Second))
 	if err != nil {
-		msg := err.Error()
-		resp := RepHostUnreachable
-		if strings.Contains(msg, "refused") {
-			resp = RepConnectionRefused
-		} else if strings.Contains(msg, "network is unreachable") {
-			resp = RepNetworkUnreachable
-		}
-		log.Println("dial error: ", err)
-		NewReply(resp).SendTo(conn)
-		return
+		log.Println("write msg SetDeadline error: ", err)
+		return err
 	}
-	defer target.Close()
-	local := target.LocalAddr().(*net.TCPAddr)
-	reply := new(Reply)
-	reply.Address = ToAddress(local.IP, local.Port)
-	reply.Rep = RepSuccess
-	err = reply.SendTo(conn)
+	_, err = conn.Write(msg)
 	if err != nil {
-		log.Println("send reply: ", err)
-		return
+		log.Println("write msg error: ", err)
+		return err
 	}
-	exchangeData(target, conn)
-}
-
-func associateHandle(conn net.Conn) {
-	reply := new(Reply)
-	reply.Rep = RepSuccess
-	reply.Address = ToAddress(udpAddr.IP, udpAddr.Port)
-	err := reply.SendTo(conn)
+	err = conn.SetDeadline(time.Time{})
 	if err != nil {
-		return
+		log.Println("read msg cancel SetDeadline error: ", err)
+		return err
 	}
-	for {
-		_, err := RcvMsg(conn)
-		if err != nil {
-			return
-		}
-	}
-}
-
-func serveRelay(conn *net.UDPConn, relay *Relay) {
-	associate := new(Associate)
-	associate.Src = relay.From
-	if relay.Address.Type() == AtypDomain {
-		associate.Domain = relay.Address
-	} else {
-		associate.Dst = relay.Address
-	}
-	associate.DataChan = make(chan []byte, 50)
-	associateMap.PutAssociate(associate)
-	var ip net.IP
-	if relay.Address.Type() == AtypDomain {
-		addr, err := net.ResolveIPAddr("ip", relay.Address.Addr())
-		if err != nil {
-			log.Println("resolve ip error: ", err)
-			return
-		}
-		ip = addr.IP
-	} else {
-		ip = relay.Address.IP()
-	}
-	associate.Dst = ToAddress(ip, relay.Address.Port())
-	associateMap.PutAssociate(associate)
-	target, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: ip, Port: relay.Address.Port()})
-	if err != nil {
-		return
-	}
-	defer target.Close()
-	associate.DataChan <- relay.Data
-	go func() {
-		for {
-			select {
-			case data := <-associate.DataChan:
-				_, err := target.Write(data)
-				if err != nil {
-					log.Println("send udp to server error: ", err)
-					break
-				}
-			}
-		}
-	}()
-	for {
-		data, err := RcvMsg(target)
-		if err != nil {
-			log.Println("read udp error: ", err)
-			break
-		}
-		relay := new(Relay)
-		relay.Address = associate.Dst
-		relay.Data = data
-		_, err = conn.WriteToUDP(relay.GetBytes(), associate.Src)
-		if err != nil {
-			log.Println("send udp to Client error: ", err)
-			break
-		}
-	}
-
+	return nil
 }
 
 func RcvMsg(conn net.Conn) ([]byte, error) {
-	buf := make([]byte, 261)
+	buf := make([]byte, msgMaxSize)
+	err := conn.SetDeadline(time.Now().Add(5 * time.Second))
+	if err != nil {
+		log.Println("read msg SetDeadline error: ", err)
+		return nil, err
+	}
 	size, err := conn.Read(buf)
 	if err != nil {
 		log.Println("read msg error: ", err)
 		return nil, err
 	}
+	err = conn.SetDeadline(time.Time{})
+	if err != nil {
+		log.Println("read msg cancel SetDeadline error: ", err)
+		return nil, err
+	}
 	return buf[:size], nil
 }
 
-func exchangeData(peerStream net.Conn, localConn net.Conn) {
-	defer localConn.Close()
-	defer peerStream.Close()
-	go func() {
-		defer localConn.Close()
-		defer peerStream.Close()
-		_, err := byteCopy(peerStream, localConn)
-		log.Println(localConn.RemoteAddr(), " =>", peerStream.RemoteAddr(), "exchangeData exit:", err)
-	}()
-	_, err := byteCopy(localConn, peerStream)
-	log.Println(peerStream.RemoteAddr(), " =>", localConn.RemoteAddr(), "exchangeData exit:", err)
+func exchangeData(targetConn net.Conn, localConn net.Conn) chan error {
+	errChan := make(chan error, 2)
+	go copyByte(targetConn, localConn, errChan)
+	go copyByte(localConn, targetConn, errChan)
+	return errChan
 }
 
 // Memory optimized io.Copy function specified for this library
-func byteCopy(dst io.Writer, src io.Reader) (written int64, err error) {
+func copyByte(dst io.Writer, src io.Reader, errChan chan<- error) {
 	// If the reader has a WriteTo method, use it to do the copy.
 	// Avoids an allocation and a copy.
 	if wt, ok := src.(io.WriterTo); ok {
-		return wt.WriteTo(dst)
+		_, err := wt.WriteTo(dst)
+		if err != nil {
+			errChan <- err
+		}
 	}
 	// Similarly, if the writer has a ReadFrom method, use it to do the copy.
 	if rt, ok := dst.(io.ReaderFrom); ok {
-		return rt.ReadFrom(src)
+		_, err := rt.ReadFrom(src)
+		if err != nil {
+			errChan <- err
+		}
 	}
 
 	// fallback to standard io.CopyBuffer
 	buf := make([]byte, bufSize)
-	return io.CopyBuffer(dst, src, buf)
+	_, err := io.CopyBuffer(dst, src, buf)
+	if err != nil {
+		errChan <- err
+	}
 }

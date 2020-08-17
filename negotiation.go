@@ -2,7 +2,6 @@ package socks5
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"net"
 )
@@ -30,9 +29,9 @@ func Negotiation(conn net.Conn) error {
 	return fmt.Errorf("unsupported auth methods")
 }
 
-func sendNegotiation(conn io.Writer, method uint8) {
+func sendNegotiation(conn net.Conn, method uint8) {
 	negotiation := []byte{Version, method}
-	_, err := conn.Write(negotiation)
+	err := WriteMsg(conn, negotiation)
 	if err != nil {
 		log.Printf("send negotiation error: %v", err)
 	}

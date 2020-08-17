@@ -38,7 +38,7 @@ const (
 	RepNotSupported
 )
 
-const msgMaxSize = 261
+const msgMaxSize = 262
 const bufSize = 4096
 
 var listenAddr string

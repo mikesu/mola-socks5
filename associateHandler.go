@@ -62,15 +62,17 @@ func (am *AssociateMap) RemoveContext(ip net.IP, port int) *AssociateContext {
 
 func (am *AssociateMap) GetContext(ip net.IP, port int) *AssociateContext {
 	key := ip.String() + ":" + strconv.Itoa(port)
-	ctx, ok := am.ctxMap[key]
+	assCtx, ok := am.ctxMap[key]
 	if ok {
-		return ctx
+		return assCtx
+	} else if port != 0 {
+		return am.GetContext(ip, 0)
 	} else {
 		return nil
 	}
 }
 
-func (am *AssociateMap) PutAssociate(ass *AssociateLink) {
+func (am *AssociateMap) PutLink(ass *AssociateLink) {
 	am.assLock.Lock()
 	defer am.assLock.Unlock()
 	src := ass.Src.String()
@@ -82,8 +84,8 @@ func (am *AssociateMap) PutAssociate(ass *AssociateLink) {
 	}
 }
 
-func (am *AssociateMap) RemoveAssociate(src *net.UDPAddr, dst Address) *AssociateLink {
-	ass := am.GetAssociate(src, dst)
+func (am *AssociateMap) RemoveLink(src *net.UDPAddr, dst Address) *AssociateLink {
+	ass := am.GetLink(src, dst)
 	if ass == nil {
 		return nil
 	} else {
@@ -99,7 +101,7 @@ func (am *AssociateMap) RemoveAssociate(src *net.UDPAddr, dst Address) *Associat
 	}
 }
 
-func (am *AssociateMap) GetAssociate(src *net.UDPAddr, dst Address) *AssociateLink {
+func (am *AssociateMap) GetLink(src *net.UDPAddr, dst Address) *AssociateLink {
 	key := src.String() + dst.String()
 	ass, ok := am.linkMap[key]
 	if ok {
@@ -178,7 +180,7 @@ func serveUdp(ctx context.Context) {
 			log.Println("get udp relay error: ", err)
 			continue
 		}
-		associate := associateMap.GetAssociate(relay.From, relay.Address)
+		associate := associateMap.GetLink(relay.From, relay.Address)
 		if associate == nil {
 			go serveRelay(udpConn, relay)
 		} else {
@@ -187,16 +189,20 @@ func serveUdp(ctx context.Context) {
 	}
 }
 
-func serveRelay(conn *net.UDPConn, relay *Relay) {
-	associate := new(AssociateLink)
-	associate.Src = relay.From
-	if relay.Address.Type() == AtypDomain {
-		associate.Domain = relay.Address
-	} else {
-		associate.Dst = relay.Address
+func serveRelay(udpConn *net.UDPConn, relay *Relay) {
+	assCtx := associateMap.GetContext(relay.From.IP, relay.From.Port)
+	if assCtx == nil {
+		return
 	}
-	associate.DataChan = make(chan []byte, 50)
-	associateMap.PutAssociate(associate)
+	assLink := new(AssociateLink)
+	assLink.Src = relay.From
+	if relay.Address.Type() == AtypDomain {
+		assLink.Domain = relay.Address
+	} else {
+		assLink.Dst = relay.Address
+	}
+	assLink.DataChan = make(chan []byte, 50)
+	associateMap.PutLink(assLink)
 	var ip net.IP
 	if relay.Address.Type() == AtypDomain {
 		addr, err := net.ResolveIPAddr("ip", relay.Address.Addr())
@@ -205,8 +211,8 @@ func serveRelay(conn *net.UDPConn, relay *Relay) {
 			return
 		}
 		ip = addr.IP
-		associate.Dst = ToAddress(ip, relay.Address.Port())
-		associateMap.PutAssociate(associate)
+		assLink.Dst = ToAddress(ip, relay.Address.Port())
+		associateMap.PutLink(assLink)
 	} else {
 		ip = relay.Address.IP()
 	}
@@ -215,32 +221,47 @@ func serveRelay(conn *net.UDPConn, relay *Relay) {
 		return
 	}
 	defer target.Close()
-	associate.DataChan <- relay.Data
-	go func() {
-		for {
-			select {
-			case data := <-associate.DataChan:
-				_, err := target.Write(data)
+	assLink.DataChan <- relay.Data
+
+	rcvData := func() (<-chan []byte, <-chan error) {
+		errChan := make(chan error, 2)
+		dataChan := make(chan []byte, 2)
+		go func() {
+			for {
+				buf := make([]byte, msgMaxSize)
+				_, err := target.Read(buf)
 				if err != nil {
-					log.Println("send udp to server error: ", err)
-					break
+					errChan <- err
+				} else {
+					dataChan <- buf
 				}
 			}
-		}
-	}()
+		}()
+		return dataChan, errChan
+	}
+	dataChan, errChan := rcvData()
 	for {
-		data, err := RcvMsg(target)
-		if err != nil {
-			log.Println("read udp error: ", err)
-			break
-		}
-		relay := new(Relay)
-		relay.Address = associate.Dst
-		relay.Data = data
-		_, err = conn.WriteToUDP(relay.GetBytes(), associate.Src)
-		if err != nil {
-			log.Println("send udp to Client error: ", err)
-			break
+		select {
+		case <-assCtx.ctx.Done():
+			return
+		case err := <-errChan:
+			log.Println("", err)
+			return
+		case data := <-assLink.DataChan:
+			_, err := target.Write(data)
+			if err != nil {
+				log.Println("send udp to server error: ", err)
+				return
+			}
+		case data := <-dataChan:
+			relay := new(Relay)
+			relay.Address = assLink.Dst
+			relay.Data = data
+			_, err = udpConn.WriteToUDP(relay.GetBytes(), assLink.Src)
+			if err != nil {
+				log.Println("send udp to Client error: ", err)
+				return
+			}
 		}
 	}
 

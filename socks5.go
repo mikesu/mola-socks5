@@ -40,6 +40,7 @@ const (
 
 const msgMaxSize = 262
 const msgMinSize = 8
+const udpMaxSize = 1500
 const bufSize = 4096
 
 var listenAddr string

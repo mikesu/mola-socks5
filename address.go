@@ -13,6 +13,7 @@ func ToAddress(ip net.IP, port int) Address {
 	var addr Address
 	if ip.To4() != nil {
 		addr = []byte{AtypIpv4}
+		ip = ip.To4()
 	} else {
 		addr = []byte{AtypIpv6}
 	}

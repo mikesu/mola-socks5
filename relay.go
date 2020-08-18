@@ -15,7 +15,7 @@ type Relay struct {
 
 func GetRelay(conn *net.UDPConn) (*Relay, error) {
 	relay := new(Relay)
-	buf := make([]byte, 1500)
+	buf := make([]byte, udpMaxSize)
 	size, from, err := conn.ReadFromUDP(buf)
 	if err != nil {
 		log.Println("read udp error: ", err)

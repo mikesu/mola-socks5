@@ -128,6 +128,7 @@ func associateHandle(ctx context.Context, conn net.Conn, request *Request) {
 		assCtx.cancel()
 	}
 	newCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	assCtx = &AssociateContext{ctx: newCtx, cancel: cancel, replaced: false, ip: ip, port: port}
 	associateMap.PutContext(assCtx)
 
@@ -175,9 +176,10 @@ func serveUdp(ctx context.Context) {
 	}
 	udpConn, err := net.ListenUDP("udp", udpAddr)
 	if err != nil {
-		log.Println("local tcp listen error: ", err)
+		log.Println("local udp listen error: ", err)
 		return
 	}
+	log.Println("local udp listen: ", udpAddr)
 	for {
 		relay, err := GetRelay(udpConn)
 		if err != nil {
@@ -233,12 +235,12 @@ func serveRelay(udpConn *net.UDPConn, relay *Relay) {
 		dataChan := make(chan []byte, 2)
 		go func() {
 			for {
-				buf := make([]byte, msgMaxSize)
-				_, err := target.Read(buf)
+				buf := make([]byte, udpMaxSize)
+				size, err := target.Read(buf)
 				if err != nil {
 					errChan <- err
 				} else {
-					dataChan <- buf
+					dataChan <- buf[:size]
 				}
 			}
 		}()
@@ -248,6 +250,7 @@ func serveRelay(udpConn *net.UDPConn, relay *Relay) {
 	for {
 		select {
 		case <-assCtx.ctx.Done():
+			log.Println("serveRelay ctx done")
 			return
 		case err := <-errChan:
 			log.Println("", err)

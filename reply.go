@@ -14,7 +14,7 @@ type Reply struct {
 func NewReply(rep uint8) *Reply {
 	reply := new(Reply)
 	reply.Rep = rep
-	reply.Address, _ = GetAddress([]byte{AtypIpv4, 0, 0, 0, 0, 0, 0})
+	reply.Address = ToAddress(net.IPv4zero, 0)
 	return reply
 }
 

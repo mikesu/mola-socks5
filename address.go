@@ -17,7 +17,7 @@ func ToAddress(ip net.IP, port int) Address {
 		addr = []byte{AtypIpv6}
 	}
 	addr = append(addr, ip...)
-	addr = append(addr, uint8(port>>8), uint8(port-((port>>8)<<8)))
+	addr = append(addr, uint8(port>>8), uint8(port&255))
 	return addr
 }
 

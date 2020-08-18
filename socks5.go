@@ -44,11 +44,15 @@ const bufSize = 4096
 
 var listenAddr string
 
-func Run(addr string) {
+func Run(ctx context.Context, addr string) {
 	log.Println("Run socks5 on: ", addr)
 	listenAddr = addr
-	go serveUdp(context.Background())
-	serveTcp(context.Background())
+	go serveUdp(ctx)
+	go serveTcp(ctx)
+	select {
+	case <-ctx.Done():
+		log.Println("Socks5 stop: ", ctx.Err())
+	}
 }
 
 func serveTcp(ctx context.Context) {

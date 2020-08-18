@@ -21,7 +21,7 @@ func GetRelay(conn *net.UDPConn) (*Relay, error) {
 		log.Println("read udp error: ", err)
 		return nil, err
 	}
-	if size < 10 {
+	if size < msgMinSize {
 		log.Println("udp length is too short: ", size)
 		return nil, fmt.Errorf("message length is too short")
 	}

@@ -11,7 +11,7 @@ type Address []byte
 
 func ToAddress(ip net.IP, port int) Address {
 	var addr Address
-	if len(ip) == net.IPv4len {
+	if ip.To4() != nil {
 		addr = []byte{AtypIpv4}
 	} else {
 		addr = []byte{AtypIpv6}

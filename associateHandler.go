@@ -112,6 +112,7 @@ func (am *AssociateMap) GetLink(src *net.UDPAddr, dst Address) *AssociateLink {
 }
 
 func associateHandle(ctx context.Context, conn net.Conn, request *Request) {
+	log.Println("associateHandle", request.Address.String())
 	ip, port, err := request.Address.ResolveIPAddr()
 	if err != nil {
 		NewReply(RepAddrTypeNotSupported).SendTo(conn)
@@ -119,7 +120,7 @@ func associateHandle(ctx context.Context, conn net.Conn, request *Request) {
 		return
 	}
 	if ip.Equal(net.IPv4zero) || ip.Equal(net.IPv6zero) {
-		ip = conn.LocalAddr().(*net.TCPAddr).IP
+		ip = conn.RemoteAddr().(*net.TCPAddr).IP
 	}
 	assCtx := associateMap.GetContext(ip, port)
 	if assCtx != nil {
@@ -135,13 +136,14 @@ func associateHandle(ctx context.Context, conn net.Conn, request *Request) {
 	reply.Address = ToAddress(udpAddr.IP, udpAddr.Port)
 	err = reply.SendTo(conn)
 	if err != nil {
+		log.Println("send reply error", err)
 		return
 	}
 	checkConn := func() <-chan error {
 		errChan := make(chan error, 2)
 		go func() {
+			buf := make([]byte, msgMaxSize)
 			for {
-				buf := make([]byte, msgMaxSize)
 				_, err := conn.Read(buf)
 				if err != nil {
 					errChan <- err
@@ -153,10 +155,12 @@ func associateHandle(ctx context.Context, conn net.Conn, request *Request) {
 	errChan := checkConn()
 	select {
 	case <-newCtx.Done():
+		log.Println("ctx done : ", newCtx.Err())
 		if assCtx.replaced == false {
 			associateMap.RemoveContext(ip, port)
 		}
 	case err = <-errChan:
+		log.Println("checkConn error: ", err)
 		associateMap.RemoveContext(ip, port)
 	}
 }
@@ -180,6 +184,7 @@ func serveUdp(ctx context.Context) {
 			log.Println("get udp relay error: ", err)
 			continue
 		}
+		log.Println("get udp relay : ", relay.Address.String())
 		associate := associateMap.GetLink(relay.From, relay.Address)
 		if associate == nil {
 			go serveRelay(udpConn, relay)

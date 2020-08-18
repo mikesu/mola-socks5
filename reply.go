@@ -25,7 +25,7 @@ func GetReply(conn net.Conn) (*Reply, error) {
 		return nil, err
 	}
 	size := len(msg)
-	if size < 10 {
+	if size < msgMinSize {
 		log.Println("message length is too short: ", size)
 		return nil, fmt.Errorf("message length is too short")
 	}

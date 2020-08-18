@@ -39,12 +39,13 @@ const (
 )
 
 const msgMaxSize = 262
+const msgMinSize = 8
 const bufSize = 4096
 
 var listenAddr string
 
 func Run(addr string) {
-	log.Println("Run socks5 on: ", listenAddr)
+	log.Println("Run socks5 on: ", addr)
 	listenAddr = addr
 	go serveUdp(context.Background())
 	serveTcp(context.Background())
@@ -56,13 +57,27 @@ func serveTcp(ctx context.Context) {
 		log.Println("local tcp listen error: ", err)
 		return
 	}
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			log.Println("local accept error: ", err)
-			continue
-		}
-		go serveTcpConn(ctx, conn)
+	defer listener.Close()
+	accept := func() chan error {
+		errChan := make(chan error)
+		go func() {
+			for {
+				conn, err := listener.Accept()
+				if err != nil {
+					errChan <- err
+					break
+				}
+				go serveTcpConn(ctx, conn)
+			}
+		}()
+		return errChan
+	}
+	errChan := accept()
+	select {
+	case <-ctx.Done():
+		log.Println("ctx done: ", ctx.Err())
+	case err := <-errChan:
+		log.Println("accept error: ", err)
 	}
 }
 
@@ -84,6 +99,8 @@ func serveTcpConn(ctx context.Context, conn net.Conn) {
 		connectHandle(ctx, conn, request)
 	case CmdAssociate:
 		associateHandle(ctx, conn, request)
+	case CmdBind:
+		bindHandle(ctx, conn, request)
 	default:
 		NewReply(RepCommandNotSupported).SendTo(conn)
 		log.Println("command not support:", request.Command)

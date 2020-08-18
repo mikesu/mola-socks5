@@ -18,7 +18,7 @@ func GetRequest(conn net.Conn) (*Request, error) {
 		return nil, err
 	}
 	size := len(msg)
-	if size < 10 {
+	if size < msgMinSize {
 		for _, v := range msg {
 			log.Print(v, ",")
 		}

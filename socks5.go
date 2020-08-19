@@ -140,7 +140,7 @@ func RcvMsg(conn net.Conn) ([]byte, error) {
 	}
 	size, err := conn.Read(buf)
 	if err != nil {
-		log.Println("read msg error: ", err)
+		log.Println("read msg error: ", err, conn.RemoteAddr().String())
 		return nil, err
 	}
 	err = conn.SetDeadline(time.Time{})

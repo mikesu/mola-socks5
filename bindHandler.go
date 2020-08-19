@@ -40,6 +40,7 @@ func bindHandle(ctx context.Context, conn net.Conn, req *Request) {
 				errChan <- err
 				return
 			}
+			defer target.Close()
 			remoteAddr := target.RemoteAddr().(*net.TCPAddr)
 			log.Println("bind accept success: ", remoteAddr.String())
 			if remoteAddr.IP.Equal(ip) && remoteAddr.Port == port {
@@ -52,7 +53,7 @@ func bindHandle(ctx context.Context, conn net.Conn, req *Request) {
 					return
 				}
 				go copyByte(target, conn, errChan)
-				go copyByte(conn, target, errChan)
+				copyByte(conn, target, errChan)
 			} else {
 				NewReply(RepNotAllow).SendTo(conn)
 				errChan <- fmt.Errorf("bind request addr not match")

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 func main() {
@@ -14,9 +15,15 @@ func main() {
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGQUIT)
 	ctx, cancel := context.WithCancel(context.Background())
 	go socks5.Run(ctx, "127.0.0.1:3080")
-	select {
-	case s := <-signalChan:
-		log.Println("rcv signal: ", s)
-		cancel()
+	for {
+		select {
+		case s := <-signalChan:
+			log.Println("rcv signal: ", s)
+			cancel()
+		case <-ctx.Done():
+			time.Sleep(2 * time.Second)
+			log.Println("socks5 exit done")
+			return
+		}
 	}
 }

@@ -7,7 +7,7 @@ import (
 )
 
 func Negotiation(conn net.Conn) error {
-	msg, err := RcvMsg(conn)
+	msg, err := RcvMsg(conn, readTimeout)
 	if err != nil {
 		return err
 	}
@@ -31,7 +31,7 @@ func Negotiation(conn net.Conn) error {
 
 func sendNegotiation(conn net.Conn, method uint8) {
 	negotiation := []byte{Version, method}
-	err := WriteMsg(conn, negotiation)
+	err := WriteMsg(conn, writeTimeout, negotiation)
 	if err != nil {
 		log.Printf("send negotiation error: %v", err)
 	}

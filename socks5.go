@@ -43,6 +43,9 @@ const msgMinSize = 8
 const udpMaxSize = 1500
 const bufSize = 4096
 
+const readTimeout = 5 * time.Second
+const writeTimeout = 10 * time.Second
+
 var listenAddr string
 
 func Run(ctx context.Context, addr string) {
@@ -94,7 +97,7 @@ func serveTcpConn(ctx context.Context, conn net.Conn) {
 		log.Println("negotiation error: ", err)
 		return
 	}
-	request, err := GetRequest(conn)
+	request, err := GetRequest(conn, readTimeout)
 	if err != nil {
 		log.Println("get request error: ", err)
 		return
@@ -112,41 +115,49 @@ func serveTcpConn(ctx context.Context, conn net.Conn) {
 	}
 }
 
-func WriteMsg(conn net.Conn, msg []byte) error {
-	err := conn.SetDeadline(time.Now().Add(10 * time.Second))
-	if err != nil {
-		log.Println("write msg SetDeadline error: ", err)
-		return err
+func WriteMsg(conn net.Conn, timeout time.Duration, msg []byte) error {
+	if timeout != 0 {
+		err := conn.SetDeadline(time.Now().Add(timeout))
+		if err != nil {
+			log.Println("write msg SetDeadline error: ", err)
+			return err
+		}
 	}
-	_, err = conn.Write(msg)
+	_, err := conn.Write(msg)
 	if err != nil {
 		log.Println("write msg error: ", err)
 		return err
 	}
-	err = conn.SetDeadline(time.Time{})
-	if err != nil {
-		log.Println("read msg cancel SetDeadline error: ", err)
-		return err
+	if timeout != 0 {
+		err = conn.SetDeadline(time.Time{})
+		if err != nil {
+			log.Println("read msg cancel SetDeadline error: ", err)
+			return err
+		}
 	}
 	return nil
 }
 
-func RcvMsg(conn net.Conn) ([]byte, error) {
+func RcvMsg(conn net.Conn, timeout time.Duration) ([]byte, error) {
 	buf := make([]byte, msgMaxSize)
-	err := conn.SetDeadline(time.Now().Add(5 * time.Second))
-	if err != nil {
-		log.Println("read msg SetDeadline error: ", err)
-		return nil, err
+	if timeout != 0 {
+		err := conn.SetDeadline(time.Now().Add(timeout))
+		if err != nil {
+			log.Println("read msg SetDeadline error: ", err)
+			return nil, err
+		}
 	}
 	size, err := conn.Read(buf)
 	if err != nil {
 		log.Println("read msg error: ", err)
 		return nil, err
 	}
-	err = conn.SetDeadline(time.Time{})
-	if err != nil {
-		log.Println("read msg cancel SetDeadline error: ", err)
-		return nil, err
+	if timeout != 0 {
+		err = conn.SetDeadline(time.Time{})
+		if err != nil {
+			log.Println("read msg cancel SetDeadline error: ", err)
+			return nil, err
+		}
 	}
 	return buf[:size], nil
 }

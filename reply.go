@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"time"
 )
 
 type Reply struct {
@@ -18,9 +19,9 @@ func NewReply(rep uint8) *Reply {
 	return reply
 }
 
-func GetReply(conn net.Conn) (*Reply, error) {
+func GetReply(conn net.Conn, timeout time.Duration) (*Reply, error) {
 	reply := new(Reply)
-	msg, err := RcvMsg(conn)
+	msg, err := RcvMsg(conn, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +56,7 @@ func (r *Reply) GetBytes() []byte {
 }
 
 func (r *Reply) SendTo(conn net.Conn) error {
-	err := WriteMsg(conn, r.GetBytes())
+	err := WriteMsg(conn, writeTimeout, r.GetBytes())
 	if err != nil {
 		log.Println("send reply error: ", err)
 		return err

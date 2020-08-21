@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"time"
 )
 
 type Request struct {
@@ -11,9 +12,9 @@ type Request struct {
 	Address Address
 }
 
-func GetRequest(conn net.Conn) (*Request, error) {
+func GetRequest(conn net.Conn, timeout time.Duration) (*Request, error) {
 	request := new(Request)
-	msg, err := RcvMsg(conn)
+	msg, err := RcvMsg(conn, timeout)
 	if err != nil {
 		return nil, err
 	}

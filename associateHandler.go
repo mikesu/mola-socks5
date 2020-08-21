@@ -268,7 +268,7 @@ func serveRelay(udpConn *net.UDPConn, relay *Relay) {
 				log.Println("send udp to Client error: ", err)
 				return
 			}
-			log.Println("send udp to client success. ", assLink.Src.String())
+			log.Println("send udp to client success:", assLink.Src.String())
 		}
 	}
 

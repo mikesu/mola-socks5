@@ -149,7 +149,7 @@ func RcvMsg(conn net.Conn, timeout time.Duration) ([]byte, error) {
 	}
 	size, err := conn.Read(buf)
 	if err != nil {
-		log.Println("read msg error: ", err)
+		log.Println("read msg error: ", err, conn.RemoteAddr().String())
 		return nil, err
 	}
 	if timeout != 0 {

@@ -33,7 +33,7 @@ func bindHandle(ctx context.Context, conn net.Conn, req *Request) {
 	}
 	log.Println("send bind reply success: ", local.String())
 	accept := func() chan error {
-		errChan := make(chan error, 2)
+		errChan := make(chan error, errChanSize)
 		go func() {
 			target, err := listener.Accept()
 			if err != nil {

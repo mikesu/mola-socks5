@@ -141,7 +141,7 @@ func associateHandle(ctx context.Context, conn net.Conn, request *Request) {
 		return
 	}
 	checkConn := func() <-chan error {
-		errChan := make(chan error, 2)
+		errChan := make(chan error, errChanSize)
 		go func() {
 			buf := make([]byte, msgMaxSize)
 			for {
@@ -228,8 +228,8 @@ func serveRelay(udpConn *net.UDPConn, relay *Relay) {
 	assLink.DataChan <- relay.Data
 
 	rcvData := func() (<-chan []byte, <-chan error) {
-		errChan := make(chan error, 2)
-		dataChan := make(chan []byte, 2)
+		errChan := make(chan error, errChanSize)
+		dataChan := make(chan []byte, 50)
 		go func() {
 			for {
 				buf := make([]byte, udpMaxSize)

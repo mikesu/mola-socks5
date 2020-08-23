@@ -45,6 +45,7 @@ const bufSize = 4096
 
 const readTimeout = 5 * time.Second
 const writeTimeout = 10 * time.Second
+const errChanSize = 5
 
 var listenAddr string
 
@@ -67,7 +68,7 @@ func serveTcp(ctx context.Context) {
 	}
 	defer listener.Close()
 	accept := func() chan error {
-		errChan := make(chan error)
+		errChan := make(chan error, errChanSize)
 		go func() {
 			for {
 				conn, err := listener.Accept()
@@ -163,7 +164,7 @@ func RcvMsg(conn net.Conn, timeout time.Duration) ([]byte, error) {
 }
 
 func exchangeData(targetConn net.Conn, localConn net.Conn) chan error {
-	errChan := make(chan error, 2)
+	errChan := make(chan error, errChanSize)
 	go copyByte(targetConn, localConn, errChan)
 	go copyByte(localConn, targetConn, errChan)
 	return errChan
@@ -178,6 +179,7 @@ func copyByte(dst io.Writer, src io.Reader, errChan chan<- error) {
 		if err != nil {
 			errChan <- err
 		}
+		return
 	}
 	// Similarly, if the writer has a ReadFrom method, use it to do the copy.
 	if rt, ok := dst.(io.ReaderFrom); ok {
@@ -185,6 +187,7 @@ func copyByte(dst io.Writer, src io.Reader, errChan chan<- error) {
 		if err != nil {
 			errChan <- err
 		}
+		return
 	}
 
 	// fallback to standard io.CopyBuffer
